@@ -9,56 +9,50 @@ import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
 
-// Responsible for reading COVID-19 data from a CSV file and parsing it into a list of CovidRecord objects
 public class CovidCSVReader {
-    private String filename; // Path to the CSV file
-    private List<CovidRecord> records; // List to store the parsed COVID-19 records
-    private DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"); // Format used for parsing timestamps
+    private String filename;
+    private List<CovidRecord> records;
+    private DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
 
     public CovidCSVReader(String filename) {
         this.filename = filename;
         this.records = new ArrayList<>();
     }
 
-    // Main method to read data from the CSV file
     public List<CovidRecord> readData() {
         try (BufferedReader br = Files.newBufferedReader(Paths.get(filename))) {
-            String headerLine = br.readLine(); // Read header to identify column indices
-            if (headerLine == null) return records; // Return empty list if file is empty
-
+            String headerLine = br.readLine();
+            if (headerLine == null) return records;
             String[] headers = parseCSVLine(headerLine);
             Map<String, Integer> headerMap = new HashMap<>();
             for (int i = 0; i < headers.length; i++) {
-                headerMap.put(headers[i].toLowerCase().trim(), i); // Normalize header names to allow flexible matching
+                headerMap.put(headers[i].toLowerCase().trim(), i);
             }
 
             String line;
             while ((line = br.readLine()) != null) {
                 String[] tokens = parseCSVLine(line);
-
-                // Validate and extract ZIP code
                 String zip = tokens[headerMap.get("zip_code")].trim();
-                if (zip.length() != 5 || !zip.matches("\\d{5}")) continue; // Skip invalid ZIPs
+                if (zip.length() != 5 || !zip.matches("\\d{5}")) continue;
 
-                // Parse and validate timestamp
-                String timestampStr = tokens[headerMap.get("timestamp")].trim();
+                String timestampStr = tokens[headerMap.get("etl_timestamp")].trim();
+
                 LocalDateTime timestamp;
                 try {
                     timestamp = LocalDateTime.parse(timestampStr, formatter);
                 } catch (DateTimeParseException e) {
-                    continue; // Skip malformed timestamps
+                    continue;
                 }
 
-                // Parse all relevant integer fields
-                int partial = parseInteger(tokens, headerMap, "partial_vaccinated");
-                int full = parseInteger(tokens, headerMap, "full_vaccinated");
-                int tests = parseInteger(tokens, headerMap, "tests");
-                int boosters = parseInteger(tokens, headerMap, "boosters");
+                int partial = parseInteger(tokens, headerMap, "partially_vaccinated");
+                int full = parseInteger(tokens, headerMap, "fully_vaccinated");
+                int pos = parseInteger(tokens, headerMap, "POS");
+                int neg = parseInteger(tokens, headerMap, "NEG");
+                int boosters = parseInteger(tokens, headerMap, "boosted");
                 int hospitalized = parseInteger(tokens, headerMap, "hospitalized");
                 int deaths = parseInteger(tokens, headerMap, "deaths");
 
-                // Construct a CovidRecord and add it to the result list
-                CovidRecord record = new CovidRecord(zip, timestamp, partial, full, tests, boosters, hospitalized, deaths);
+                CovidRecord record = new CovidRecord(zip, timestamp, partial, full, pos, neg, boosters, hospitalized, deaths);
                 records.add(record);
             }
         } catch (IOException e) {
@@ -67,7 +61,6 @@ public class CovidCSVReader {
         return records;
     }
 
-    // Parse an integer value from the specified column in the token array
     private int parseInteger(String[] tokens, Map<String, Integer> headerMap, String fieldName) {
         int index = headerMap.getOrDefault(fieldName, -1);
         if (index == -1 || index >= tokens.length) return 0;
@@ -76,33 +69,32 @@ public class CovidCSVReader {
         try {
             return Integer.parseInt(value);
         } catch (NumberFormatException e) {
-            return 0; // Default to 0 if parsing fails
+            return 0;
         }
     }
 
-    // Custom CSV parser to correctly handle fields that may be quoted or contain embedded commas
+    // Basic CSV line parser that handles quoted fields.
     private String[] parseCSVLine(String line) {
         List<String> tokens = new ArrayList<>();
         boolean inQuotes = false;
         StringBuilder sb = new StringBuilder();
-
         for (int i = 0; i < line.length(); i++) {
             char c = line.charAt(i);
             if (c == '"') {
                 if (inQuotes && i + 1 < line.length() && line.charAt(i + 1) == '"') {
-                    sb.append('"'); // Handle escaped quote inside quoted field
+                    sb.append('"');
                     i++;
                 } else {
-                    inQuotes = !inQuotes; // Toggle quote state
+                    inQuotes = !inQuotes;
                 }
             } else if (c == ',' && !inQuotes) {
-                tokens.add(sb.toString()); // Comma outside quotes ends field
+                tokens.add(sb.toString());
                 sb.setLength(0);
             } else {
                 sb.append(c);
             }
         }
-        tokens.add(sb.toString()); // Add final token
+        tokens.add(sb.toString());
         return tokens.toArray(new String[0]);
     }
 }
